@@ -114,7 +114,13 @@ Supabase 대시보드 → Table Editor 에서 아래 테이블이 모두 있어�
 
 ### S3 프론트엔드
 - [ ] 버킷 정적 호스팅 활성화 여부
-- [ ] 최신 빌드 배포 여부 (S3에 있는 파일이 GitHub 최신 커밋과 일치하는지)
+- [ ] 버킷 퍼블릭 액세스 차단 해제 + 버킷 정책(PublicRead) 유지 여부
+- [ ] 최신 빌드 배포 여부 — GitHub 최신 커밋과 S3 파일이 일치하는지 확인:
+  ```bash
+  # S3에 올라간 index.html 수정 시각 확인
+  aws s3 ls s3://teamteam-frontend-bucket/index.html
+  ```
+- [ ] CloudFront 배포 연결 여부 (현재 미완 — S3 직접 접근 중)
 
 ---
 
@@ -137,12 +143,51 @@ b6225d9  docs: gap analysis v4
 1457320  fix: login (status 값 정합, Schedule 멤버 엔드포인트 수정)
 ```
 
-**⚠️ S3 배포는 수동입니다.** GitHub push = S3 자동 배포 아님. 아래 명령어로 직접 올려야 합니다:
+> **⚠️ 프론트엔드는 CI/CD 없음 — GitHub push만으로는 S3에 반영되지 않습니다.**
+> 코드 변경 후 아래 수동 배포 절차를 따라야 합니다.
+
+### 프론트엔드 코드 변경 후 배포 절차
+
 ```bash
+# 1. 로컬에서 코드 수정 후 GitHub push
 cd CollaborativeSoftwareProject
+git add -A
+git commit -m "fix: 변경 내용 설명"
+git push origin main
+
+# 2. 환경변수 설정 (.env.production 또는 빌드 시 직접)
+#    VITE_SERVER_URL = ALB 주소
+echo "VITE_SERVER_URL=http://team-alb-1271871703.us-east-1.elb.amazonaws.com" > .env.production
+
+# 3. 빌드
 npm run build
+# → dist/ 폴더 생성됨
+
+# 4. S3에 업로드
 aws s3 sync dist/ s3://teamteam-frontend-bucket --delete
+
+# 5. 배포 확인
+open http://teamteam-frontend-bucket.s3-website-us-east-1.amazonaws.com
+# 또는 curl로 200 확인
+curl -s -o /dev/null -w "%{http_code}" \
+  http://teamteam-frontend-bucket.s3-website-us-east-1.amazonaws.com
 ```
+
+> `aws s3 sync` 실행 시 AWS 자격증명이 필요합니다.  
+> AWS Academy 세션에서 발급된 임시 자격증명을 `~/.aws/credentials`에 설정하거나  
+> `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN` 환경변수로 설정하세요.
+
+### VITE_SERVER_URL 환경변수
+
+프론트가 백엔드 API를 어디로 보낼지 결정하는 핵심 변수입니다.
+
+| 환경 | 값 |
+|------|-----|
+| 로컬 개발 | `http://localhost:8000` |
+| 운영 (현재) | `http://team-alb-1271871703.us-east-1.elb.amazonaws.com` |
+| 운영 (CloudFront 연결 후) | CloudFront URL로 변경 필요 |
+
+`.env.production` 파일에 설정하면 `npm run build` 시 자동으로 번들에 포함됩니다.
 
 ---
 
@@ -152,7 +197,8 @@ aws s3 sync dist/ s3://teamteam-frontend-bucket --delete
 |------|------|------|
 | Supabase `refresh_tokens` 테이블 생성 | 백엔드 | ⚠️ 생성 필요 (없으면 refresh/logout 불완전) |
 | EC2_HOST_2 GitHub Secret 등록 + t2 Elastic IP 연결 | 인프라A | ❌ 미완 |
-| S3 프론트엔드 최신 빌드 배포 | 프론트E | ❌ 미완 |
+| **프론트엔드 CI/CD 구성** | 프론트E / 인프라D | ❌ 미완 — main push 시 자동으로 빌드 → S3 업로드되도록 GitHub Actions 워크플로 추가 필요 (`UsingPP/CollaborativeSoftwareProject`에 `.github/workflows/deploy.yml` 없음) |
+| S3 프론트엔드 최신 빌드 배포 | 프론트E | ❌ 미완 (현재 수동 배포 필요 — 위 배포 절차 참고) |
 | CloudFront 연결 (HTTPS) | 프론트E | ❌ 미완 |
 | CORS 실제 URL 적용 (`deploy.yml`의 `CORS_ORIGINS=*` 제거) | SecOps B | ❌ 미완 |
 | ALB WAF 연결 | SecOps B | ❌ 미완 |
