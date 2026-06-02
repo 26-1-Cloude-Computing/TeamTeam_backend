@@ -73,7 +73,10 @@ async def login(body: LoginRequest, response: Response):
     access_token = create_access_token({"user_id": user["id"]})
     refresh_token = create_refresh_token({"user_id": user["id"]})
 
-    db.table("refresh_tokens").insert({"user_id": user["id"], "token": refresh_token}).execute()
+    try:
+        db.table("refresh_tokens").insert({"user_id": user["id"], "token": refresh_token}).execute()
+    except Exception:
+        pass
 
     response.set_cookie(
         key="refresh_token",
@@ -94,9 +97,14 @@ async def refresh(response: Response, refresh_token: str = Cookie(None)):
     if not payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="유효하지 않은 Refresh Token입니다.")
     db = get_supabase()
-    stored = db.table("refresh_tokens").select("id").eq("token", refresh_token).execute()
-    if not stored.data:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="만료되거나 로그아웃된 토큰입니다.")
+    try:
+        stored = db.table("refresh_tokens").select("id").eq("token", refresh_token).execute()
+        if not stored.data:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="만료되거나 로그아웃된 토큰입니다.")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
     user_id = payload["user_id"]
     user = db.table("user").select("id, name").eq("id", user_id).single().execute()
     new_access_token = create_access_token({"user_id": user_id})
@@ -107,6 +115,9 @@ async def refresh(response: Response, refresh_token: str = Cookie(None)):
 async def logout(response: Response, refresh_token: str = Cookie(None)):
     if refresh_token:
         db = get_supabase()
-        db.table("refresh_tokens").delete().eq("token", refresh_token).execute()
+        try:
+            db.table("refresh_tokens").delete().eq("token", refresh_token).execute()
+        except Exception:
+            pass
     response.delete_cookie("refresh_token")
     return {"message": "로그아웃되었습니다."}
