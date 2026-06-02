@@ -132,6 +132,17 @@ CREATE TABLE chat_message (
     created_at      TIMESTAMP DEFAULT NOW()
 );
 
+-- 13. refresh_tokens 테이블
+--     JWT Refresh Token 저장/검증/폐기용. 이 테이블이 없으면
+--     로그인(POST /api/auth/login)이 500 에러를 반환한다.
+--     (auth.py가 로그인 시 토큰을 insert하기 때문)
+CREATE TABLE refresh_tokens (
+    id         BIGSERIAL   PRIMARY KEY,
+    user_id    INTEGER     NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+    token      TEXT        NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ============================================================
 -- 성능 인덱스
 -- ============================================================
@@ -140,3 +151,4 @@ CREATE INDEX idx_team_invite_code      ON team(invite_code);
 CREATE INDEX idx_team_member_user      ON team_member(user_id);
 CREATE INDEX idx_notice_team           ON notice(team_id, created_at DESC);
 CREATE INDEX idx_chat_message_room     ON chat_message(room_id, created_at);
+CREATE INDEX idx_refresh_tokens_token  ON refresh_tokens(token);

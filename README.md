@@ -6,9 +6,10 @@
 
 - **Framework**: Python 3.12 / FastAPI
 - **Database**: Supabase (PostgreSQL)
-- **Authentication**: Simple ID-based Auth (데모용)
+- **Authentication**: JWT (HS256) + bcrypt 비밀번호 해싱 — Access Token + Refresh Token(httpOnly Cookie)
 - **AI**: Gemini API (gemini-2.0-flash) — 일정 추천 & 채팅 요약
 - **Monitoring**: Prometheus + 구조화 JSON 로깅
+- **Secrets**: AWS Secrets Manager (앱 시작 시 boto3로 로드, EC2 IAM 역할 사용)
 - **Deployment**: Docker + Docker Compose → AWS EC2
 
 ## 프로젝트 구조
@@ -18,12 +19,12 @@ app/
 ├── main.py              # FastAPI 앱, 미들웨어, CORS 설정
 ├── dependencies.py      # 인증 dependency (get_current_user)
 ├── core/
-│   ├── config.py        # 환경변수 설정 (pydantic-settings)
-│   ├── supabase.py      # Supabase 클라이언트 싱글턴
-│   ├── security.py      # ID 기반 단순 인증 유틸
+│   ├── config.py        # 환경변수 설정 (Secrets Manager 우선, .env 폴백)
+│   ├── supabase.py      # Supabase 클라이언트 싱글턴 (service_role key 우선)
+│   ├── security.py      # bcrypt 해싱 + JWT(access/refresh) 발급·검증
 │   └── logging.py       # 구조화 JSON 로깅 미들웨어
 ├── routers/
-│   ├── auth.py          # POST /api/auth/signup, /api/auth/login
+│   ├── auth.py          # 회원가입/로그인/토큰 재발급/로그아웃
 │   ├── users.py         # GET/PATCH /api/users/me
 │   ├── teams.py         # 팀 생성/참여/목록/대시보드/상태변경
 │   ├── notices.py       # 공지사항 CRUD
@@ -55,22 +56,45 @@ uvicorn app.main:app --reload --port 8000
 docker compose up --build
 ```
 
-## 환경변수 (.env)
+## 환경변수 / 시크릿
+
+`config.py`는 **앱 시작 시 AWS Secrets Manager(`us-east-1`)에서 아래 3개 시크릿을 boto3로 읽어
+모든 설정을 구성**합니다. 따라서 로컬 실행에도 Secrets Manager 접근 권한(AWS 자격증명)이 필요하며,
+접근이 불가하면 앱이 기동되지 않습니다. 별도의 `.env` 폴백 로직은 없습니다.
+
+| Secrets Manager 시크릿 | 포함 키 |
+|------------------------|---------|
+| `teamapp/prod/jwt` | `JWT_SECRET`, `REFRESH_SECRET` |
+| `teamapp/prod/ai`  | `GEMINI_API_KEY` |
+| `teamapp/prod/db`  | `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_SERVICE_KEY`, `CORS_ORIGINS` |
+
+> 동일한 이름의 **환경변수가 설정되어 있으면 Secrets Manager 값보다 우선 적용**됩니다
+> (pydantic-settings 기본 동작). `docker-compose.yml`이 `env_file: .env`로 컨테이너에
+> 주입하는 값들이 여기에 해당하므로, `.env`와 Secrets Manager 값이 다르면 `.env`가 이깁니다.
 
 | 변수명 | 설명 | 필수 |
 |--------|------|------|
 | `SUPABASE_URL` | Supabase 프로젝트 URL | ✅ |
 | `SUPABASE_KEY` | Supabase anon key | ✅ |
+| `SUPABASE_SERVICE_KEY` | Supabase service_role(secret) key — 있으면 RLS 우회용으로 우선 사용 | ❌ |
 | `GEMINI_API_KEY` | Gemini API 키 (AI 기능용) | ❌ |
-| `CORS_ORIGINS` | 허용 오리진 (쉼표 구분) | ❌ |
+| `JWT_SECRET` | Access Token 서명 키 | ✅ |
+| `REFRESH_SECRET` | Refresh Token 서명 키 | ✅ |
+| `CORS_ORIGINS` | 허용 오리진 (쉼표 구분, 없으면 `*`) | ❌ |
+
+> **참고**: JWT 인증은 Supabase의 `refresh_tokens` 테이블을 사용합니다. 현재 `auth.py`는
+> 이 테이블이 없어도 로그인은 되도록 `try/except`로 방어하고 있으나, **토큰 재발급(`/refresh`)과
+> 로그아웃(`/logout`)이 정상 동작하려면 테이블 생성이 필요**합니다 (`docs/supabase_schema.sql` 참고).
 
 ## API 엔드포인트
 
 ### 인증 (Auth)
 | 메서드 | 엔드포인트 | 설명 |
 |--------|-----------|------|
-| POST | `/api/auth/signup` | 회원가입 |
-| POST | `/api/auth/login` | 로그인 |
+| POST | `/api/auth/signup` | 회원가입 (bcrypt 해싱) |
+| POST | `/api/auth/login` | 로그인 → Access Token 반환 + Refresh Token Cookie 발급 |
+| POST | `/api/auth/refresh` | Refresh Token Cookie로 Access Token 재발급 |
+| POST | `/api/auth/logout` | 로그아웃 + Refresh Token Cookie 삭제 |
 
 ### 사용자 (Users)
 | 메서드 | 엔드포인트 | 설명 |

@@ -1,7 +1,7 @@
 # TeamTeam 클라우드 컴퓨팅 프로젝트 — 팀원 공유 문서
 
-> 최종 업데이트: 2026-05-28  
-> 발표까지: D-14
+> 최종 업데이트: 2026-06-02  
+> 발표까지: D-9
 
 ---
 
@@ -87,7 +87,7 @@
 
 | 기능 | 엔드포인트 | 상태 |
 |------|-----------|------|
-| 인증 (JWT) | POST /api/auth/login, /register, /refresh | ✅ |
+| 인증 (JWT) | POST /api/auth/signup, /login, /refresh, /logout | ✅ |
 | 팀 관리 | GET/POST /api/teams, PATCH /api/teams/{id}/status | ✅ |
 | 업무 관리 | GET/POST /api/teams/{id}/tasks, PATCH /api/tasks/{id} | ✅ |
 | AI 일정 추천 | POST /api/teams/{id}/ai-schedule | ✅ Gemini Flash |
@@ -139,11 +139,12 @@ http_requests_errors_total             (HTTP 에러 횟수)
 
 | 항목 | 상태 |
 |------|------|
-| EC2 (FastAPI 운영 중) | ✅ AWS Academy ap-northeast-2 |
+| EC2 (FastAPI 운영 중) | ✅ AWS Academy us-east-1 |
 | Docker Compose (FastAPI + Prometheus + Grafana) | ✅ |
 | Supabase PostgreSQL | ✅ 외부 연결 |
 | Gemini Flash API | ✅ 외부 연결 |
-| `.env` 파일로 설정 관리 | ⚠️ 보안 취약 (개선 필요) |
+| Secrets Manager로 설정 관리 | ✅ `teamapp/prod/{jwt,ai,db}` (앱 시작 시 boto3 로드, EC2 IAM 역할) |
+| ALB (HTTP:80) → EC2:8000 | ✅ 연결됨 |
 
 ---
 
@@ -153,9 +154,10 @@ http_requests_errors_total             (HTTP 에러 횟수)
 
 | 우선순위 | 항목 | 담당 | 이유 |
 |---------|------|------|------|
-| 🔴 Critical | Secrets Manager 이전 | 팀원B (SecOps) | `.env`에 실제 API Key 노출 — 발표 중 화면에 보이면 보안 사고 |
+| ✅ 완료 | Secrets Manager 이전 | 팀원B (SecOps) | `config.py`가 `teamapp/prod/{jwt,ai,db}` 3개 시크릿을 boto3로 로드 |
+| 🔴 Critical | Supabase `refresh_tokens` 테이블 생성 | 백엔드 | 없으면 로그인 토큰 저장 실패 (현재 try/except로 우회 중) |
 | 🔴 Critical | S3 프론트 배포 | 팀원E | 현재 로컬에서만 동작. 발표 시 데모 불가 |
-| 🔴 Critical | CORS `*` → 실제 URL 교체 | 팀원B (SecOps) | 모든 도메인 허용은 보안 위반. 발표에서 지적받을 수 있음 |
+| 🔴 Critical | CORS 실제 URL 적용 | 팀원B (SecOps) | 실제 URL은 시크릿(`teamapp/prod/db`)에 있으나, `deploy.yml`이 `.env`에 `CORS_ORIGINS=*`를 써서 시크릿 값을 덮어씀 → `deploy.yml` 수정 필요 |
 | 🟡 High | ALB 생성 + EC2 연결 | 팀원A (인프라) | 이중화(Multi-AZ) 구현의 핵심. 교수님 피드백 "이중화" 대응 |
 | 🟡 High | Auto Scaling Group 설정 | 팀원A (인프라) | 교수님 피드백 "이중화" 대응. 장애 자동 복구 시연 가능 |
 | 🟡 High | CloudFront 배포 | 팀원E | S3 단독보다 HTTPS + CDN으로 더 완성된 구조 |
@@ -169,10 +171,16 @@ http_requests_errors_total             (HTTP 에러 횟수)
 
 ### 각 항목 상세 설명
 
-#### Secrets Manager 이전 (🔴 Critical)
-현재 `TeamTeam_backend/.env` 파일에 GEMINI_API_KEY, SUPABASE_KEY 등이 평문으로 저장되어 있습니다.
-발표 중 화면을 공유할 때 이 파일이 노출되면 실제 API Key가 유출됩니다.
-AWS Secrets Manager로 이전하면 EC2가 IAM 역할을 통해 키를 가져오고, 코드에는 키가 존재하지 않습니다.
+#### Secrets Manager 이전 (✅ 완료)
+`config.py`가 앱 시작 시 `teamapp/prod/jwt`, `teamapp/prod/ai`, `teamapp/prod/db` 3개 시크릿을
+boto3로 읽어 설정을 구성합니다. EC2는 IAM 역할로 접근하며, 코드/레포에는 키가 존재하지 않습니다.
+- `jwt`: `JWT_SECRET`, `REFRESH_SECRET`
+- `ai`: `GEMINI_API_KEY`
+- `db`: `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_SERVICE_KEY`, `CORS_ORIGINS`
+
+> 남은 정리: `deploy.yml`이 `.env`에 `CORS_ORIGINS=*`를 기록하는데, 이 환경변수가
+> 시크릿 값보다 우선 적용되어 CORS가 여전히 전체 허용(`*`) 상태입니다. `deploy.yml`에서
+> 해당 줄을 제거하면 시크릿의 실제 URL이 적용됩니다.
 
 #### ALB + Auto Scaling Group (🟡 High)
 교수님 피드백 "이중화"에 직접 대응합니다.

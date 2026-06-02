@@ -8,10 +8,10 @@
 - FK 제약조건 + CASCADE 삭제 + UNIQUE 제약 설정
 - 평가 점수 CHECK 제약 (1~5점)
 
-### 2. FastAPI 백엔드 (35개 라우트)
+### 2. FastAPI 백엔드 (37개 라우트)
 | 도메인 | 엔드포인트 수 | 상태 |
 |--------|:-----------:|:----:|
-| 인증 (Auth) | 2 | ✅ |
+| 인증 (Auth) | 4 | ✅ signup/login/refresh/logout |
 | 사용자 (Users) | 2 | ✅ |
 | 팀 관리 (Teams) | 5 | ✅ |
 | 공지사항 (Notices) | 3 | ✅ |
@@ -44,7 +44,8 @@
 demo/production 단계에서는 RLS를 활성화하고 적절한 정책을 추가해야 합니다.
 
 ## 🔧 다음 단계 (TODO)
-1. `.env`에 `OPENAI_API_KEY` 설정하면 AI 기능 바로 동작
-2. EC2 배포 시 `docker compose up --build -d`
-3. demo 단계에서 RLS 활성화 + HTTPS 설정
-4. GitHub Actions CI/CD 파이프라인 구성
+1. ✅ AI 기능: `GEMINI_API_KEY` (Secrets Manager `teamapp/prod/ai`)로 연동 완료
+2. ✅ GitHub Actions CI/CD: `main` push 시 EC2 자동 배포 (`deploy.yml`) 구성 완료
+3. Supabase에 `refresh_tokens` 테이블 생성 (로그인 토큰 저장용 — `docs/supabase_schema.sql` 참고)
+4. EC2 이중화 마무리: 두 인스턴스 Elastic IP 연결 + `EC2_HOST_2` Secret 등록
+5. demo 단계에서 RLS 활성화 + HTTPS(ACM/CloudFront) 설정

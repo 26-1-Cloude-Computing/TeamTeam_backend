@@ -4,6 +4,52 @@
 
 ---
 
+## [fix] 로그인 500 에러 수정 + Secrets Manager 연동 + status 값 정합 — `ab77c0b`, `23cd902`
+
+- **날짜**: 2026-06-02
+- **작성자**: PYO
+
+### 개요
+로그인 시 발생하던 500 Internal Server Error를 수정하고, 시크릿 관리를 Secrets Manager로
+이전했으며, 프론트/백엔드 간 status 문자열 불일치를 백엔드 기준으로 통일했습니다.
+
+### 1. 로그인 500 에러 — `refresh_tokens` 테이블 부재
+
+**원인**: Supabase에 `public.refresh_tokens` 테이블이 없어, 로그인 시 토큰 insert가
+`PGRST205` (table not found) 에러를 던지고 500으로 이어졌습니다. 서버가 500을 반환하면
+CORS 헤더가 빠져 프론트에는 CORS 에러로 보였습니다.
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `app/routers/auth.py` | login/refresh/logout의 `refresh_tokens` 접근을 `try/except`로 보호 — 테이블이 없어도 로그인 자체는 성공 |
+| `docs/supabase_schema.sql` | `refresh_tokens` 테이블(13번) + `idx_refresh_tokens_token` 인덱스 추가 |
+
+> ⚠️ **운영 조치 필요**: Supabase SQL Editor에서 `docs/supabase_schema.sql`의
+> `refresh_tokens` 테이블을 실제로 생성해야 refresh/logout이 완전히 동작합니다.
+
+### 2. Secrets Manager 연동 + service_role key 지원
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `app/core/config.py` | `teamapp/prod/jwt`, `teamapp/prod/ai`, `teamapp/prod/db` 3개 시크릿을 boto3로 로드 (`.env` 폴백) |
+| `app/core/supabase.py` | `SUPABASE_SERVICE_KEY`가 있으면 anon key 대신 우선 사용 (RLS 우회, 서버용) |
+| `requirements.txt` | `boto3==1.38.0` 추가 (config.py가 import하므로 누락 시 컨테이너 기동 실패) |
+| `.dockerignore` | 신규 추가 — `.env`, `.venv`, `__pycache__` 등 빌드 컨텍스트에서 제외 |
+
+### 3. 프론트/백엔드 status 값 정합 (프론트엔드 레포)
+
+백엔드 기준값으로 프론트엔드를 통일했습니다.
+- **Task status**: `To do` / `In progress` / `Done` (기존 프론트 `pending`/`in-progress`/`completed` 제거)
+- **Team status**: `진행중` / `종료` (기존 프론트 `completed` 제거)
+- **Schedule.tsx**: 없는 엔드포인트 `/api/teams/{id}/members` 호출 제거 → `GET /api/teams/{id}` 응답의 `members` 사용
+
+### 4. 배포 워크플로 이중화 준비 — `23cd902`
+
+`.github/workflows/deploy.yml`이 `EC2_HOST`와 `EC2_HOST_2` 두 인스턴스에 모두 배포하도록 확장.
+실제 동작에는 `EC2_HOST_2` Secret 등록 + 두 EC2의 Elastic IP 연결이 필요(인프라 담당 후속 작업).
+
+---
+
 ## [feat] Gemini API 모델 버전 수정 — `31004f5`
 
 - **날짜**: 2026-05-21
