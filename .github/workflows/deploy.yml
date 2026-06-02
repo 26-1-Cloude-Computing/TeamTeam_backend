@@ -8,19 +8,20 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Create .env file for deployment
         run: |
           echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
           echo "SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}" >> .env
           echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
           echo "CORS_ORIGINS=*" >> .env
-          
-      - name: Copy files via SSH
+
+      # ── 첫 번째 인스턴스 (t3) ──────────────────────────────
+      - name: Copy files to EC2 (primary)
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -28,8 +29,8 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           source: "."
           target: "/home/${{ secrets.EC2_USERNAME }}/TeamTeam_backend"
-          
-      - name: Execute deployment commands on EC2
+
+      - name: Deploy on EC2 (primary)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -37,7 +38,26 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd /home/${{ secrets.EC2_USERNAME }}/TeamTeam_backend
-            # 디스크 공간 문제 방지를 위해 사용하지 않는 이미지 정리
             docker system prune -af --volumes
-            # 도커 컨테이너 빌드 및 재실행
+            docker compose up --build -d
+
+      # ── 두 번째 인스턴스 (t2) ──────────────────────────────
+      - name: Copy files to EC2 (secondary)
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST_2 }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "."
+          target: "/home/${{ secrets.EC2_USERNAME }}/TeamTeam_backend"
+
+      - name: Deploy on EC2 (secondary)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST_2 }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/${{ secrets.EC2_USERNAME }}/TeamTeam_backend
+            docker system prune -af --volumes
             docker compose up --build -d
