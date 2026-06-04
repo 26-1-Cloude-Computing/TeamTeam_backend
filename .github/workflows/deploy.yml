@@ -1,63 +1,47 @@
-name: Deploy to EC2
+name: Deploy Backend to Amazon ECR
 
 on:
   push:
     branches: [ "main", "master" ]
-  workflow_dispatch: # GitHub 웹에서 수동으로 실행할 수 있는 옵션
+  workflow_dispatch: # GitHub 웹에서 수동으로 실행할 수 있는 옵션 유지
 
 jobs:
-  deploy:
+  build-and-push:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Create .env file for deployment
+      # 1. AWS 자격 증명 인증 (AWS Academy용 세션 토큰 포함)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      # 2. AWS ECR(컨테이너 레지스트리) 로그인
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 3. [기존 로직 유지] 도커 이미지 빌드 전 내부 주입용 .env 파일 생성
+      # (만약 AWS 시크릿 매니저로 100% 대체했다면 이 스텝은 완전히 생략해도 됩니다!)
+      - name: Create .env file for image build
         run: |
           echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
           echo "SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}" >> .env
           echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
           echo "CORS_ORIGINS=*" >> .env
 
-      # ── 첫 번째 인스턴스 (t3) ──────────────────────────────
-      - name: Copy files to EC2 (primary)
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: "."
-          target: "/home/${{ secrets.EC2_USERNAME }}/TeamTeam_backend"
-
-      - name: Deploy on EC2 (primary)
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd /home/${{ secrets.EC2_USERNAME }}/TeamTeam_backend
-            docker system prune -af --volumes
-            docker compose up --build -d
-
-      # ── 두 번째 인스턴스 (t2) ──────────────────────────────
-      - name: Copy files to EC2 (secondary)
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_HOST_2 }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: "."
-          target: "/home/${{ secrets.EC2_USERNAME }}/TeamTeam_backend"
-
-      - name: Deploy on EC2 (secondary)
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST_2 }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd /home/${{ secrets.EC2_USERNAME }}/TeamTeam_backend
-            docker system prune -af --volumes
-            docker compose up --build -d
+      # 4. 도커 이미지 빌드 후 Amazon ECR 레포지토리로 푸시
+      - name: Build, tag, and push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: teamteam-backend  # 👈 AWS ECR 리포지토리 이름과 똑같이 맞추세요!
+          IMAGE_TAG: latest
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
