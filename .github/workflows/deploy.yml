@@ -1,63 +1,53 @@
-name: Deploy to EC2
+name: Deploy Backend to Amazon ECR & Update EC2
 
 on:
   push:
     branches: [ "main", "master" ]
-  workflow_dispatch: # GitHub 웹에서 수동으로 실행할 수 있는 옵션
+  workflow_dispatch:
 
 jobs:
-  deploy:
+  build-and-push:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Create .env file for deployment
+      # 1. AWS 자격 증명 설정
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      # 2. AWS ECR 로그인
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 3. 도커 이미지 빌드 후 Amazon ECR 레포지토리로 푸시
+      - name: Build, tag, and push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: teamteam-backend
+          IMAGE_TAG: latest
         run: |
-          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
-          echo "SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}" >> .env
-          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
-          echo "CORS_ORIGINS=*" >> .env
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-      # ── 첫 번째 인스턴스 (t3) ──────────────────────────────
-      - name: Copy files to EC2 (primary)
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: "."
-          target: "/home/${{ secrets.EC2_USERNAME }}/TeamTeam_backend"
-
-      - name: Deploy on EC2 (primary)
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd /home/${{ secrets.EC2_USERNAME }}/TeamTeam_backend
-            docker system prune -af --volumes
-            docker compose up --build -d
-
-      # ── 두 번째 인스턴스 (t2) ──────────────────────────────
-      - name: Copy files to EC2 (secondary)
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_HOST_2 }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: "."
-          target: "/home/${{ secrets.EC2_USERNAME }}/TeamTeam_backend"
-
-      - name: Deploy on EC2 (secondary)
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST_2 }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd /home/${{ secrets.EC2_USERNAME }}/TeamTeam_backend
-            docker system prune -af --volumes
-            docker compose up --build -d
+      # 4. AWS SSM Run Command (따옴표 깨짐 방지를 위해 멀티라인 구조 적용)
+      - name: AWS SSM Run Command (Update Single EC2)
+        run: |
+          aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --targets "Key=tag:Role,Values=backend" \
+            --comment "Update docker images from ECR to single EC2" \
+            --parameters 'commands=[
+              "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 851725653265.dkr.ecr.us-east-1.amazonaws.com",
+              "cd /home/ssm-user/TeamTeam_backend || cd /home/ec2-user/TeamTeam_backend || cd /home/ubuntu/TeamTeam_backend",
+              "docker compose pull",
+              "docker compose up -d",
+              "docker system prune -f"
+            ]'
