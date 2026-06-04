@@ -37,17 +37,21 @@ jobs:
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-      # 4. AWS SSM Run Command (따옴표 깨짐 방지를 위해 멀티라인 구조 적용)
+      # 4. AWS SSM Run Command (최신 docker-compose.yml 내용 다이렉트 주입 로직 추가)
       - name: AWS SSM Run Command (Update Single EC2)
         run: |
+          # 깃허브 레포에 있는 최신 docker-compose.yml 파일 내용을 변수에 안전하게 담기
+          COMPOSE_CONTENT=$(cat docker-compose.yml | base64 -w 0)
+
           aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=tag:Role,Values=backend" \
-            --comment "Update backend docker image on single EC2 securely" \
-            --parameters 'commands=[
-              "aws ecr get-login-password --region us-east-1 | sudo docker login --username AWS --password-stdin 851725653265.dkr.ecr.us-east-1.amazonaws.com",
-              "cd /home/ssm-user/TeamTeam_backend",
-              "sudo docker compose pull",
-              "sudo docker compose up -d",
-              "sudo docker system prune -f"
-            ]'
+            --comment "Update docker-compose.yml and run containers securely" \
+            --parameters "commands=[
+              \"aws ecr get-login-password --region us-east-1 | sudo docker login --username AWS --password-stdin 851725653265.dkr.ecr.us-east-1.amazonaws.com\",
+              \"cd /home/ssm-user/TeamTeam_backend\",
+              \"echo '$COMPOSE_CONTENT' | base64 -d | sudo tee docker-compose.yml > /dev/null\", # 👈 EC2 내부 컴포즈 파일을 최신본으로 강제 덮어쓰기!
+              \"sudo docker compose pull\",
+              \"sudo docker compose up -d\",
+              \"sudo docker system prune -f\"
+            ]"
