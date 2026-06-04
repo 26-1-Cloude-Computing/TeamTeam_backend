@@ -43,11 +43,11 @@ jobs:
           aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=tag:Role,Values=backend" \
-            --comment "Update docker images from ECR to single EC2" \
+            --comment "Update backend docker image on single EC2 securely" \
             --parameters 'commands=[
-              "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 851725653265.dkr.ecr.us-east-1.amazonaws.com",
-              "cd /home/ssm-user/TeamTeam_backend || cd /home/ec2-user/TeamTeam_backend || cd /home/ubuntu/TeamTeam_backend",
-              "docker compose pull",
-              "docker compose up -d",
-              "docker system prune -f"
+              "aws ecr get-login-password --region us-east-1 | sudo docker login --username AWS --password-stdin 851725653265.dkr.ecr.us-east-1.amazonaws.com",
+              "cd /home/ssm-user/TeamTeam_backend",
+              "sudo docker compose pull",
+              "sudo docker compose up -d",
+              "sudo docker system prune -f"
             ]'
