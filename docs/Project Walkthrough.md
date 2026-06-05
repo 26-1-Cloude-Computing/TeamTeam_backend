@@ -43,9 +43,12 @@
 현재 프로토타입이므로 RLS가 **비활성화** 상태입니다.
 demo/production 단계에서는 RLS를 활성화하고 적절한 정책을 추가해야 합니다.
 
-## 🔧 다음 단계 (TODO)
+## 🔧 남은 작업 (2026-06-05 기준)
 1. ✅ AI 기능: `GEMINI_API_KEY` (Secrets Manager `teamapp/prod/ai`)로 연동 완료
-2. ✅ GitHub Actions CI/CD: `main` push 시 EC2 자동 배포 (`deploy.yml`) 구성 완료
-3. Supabase에 `refresh_tokens` 테이블 생성 (로그인 토큰 저장용 — `docs/supabase_schema.sql` 참고)
-4. EC2 이중화 마무리: 두 인스턴스 Elastic IP 연결 + `EC2_HOST_2` Secret 등록
-5. demo 단계에서 RLS 활성화 + HTTPS(ACM/CloudFront) 설정
+2. ✅ GitHub Actions CI/CD: `main` push → ECR → SSM → EC2 자동 배포 완료
+3. ✅ Supabase `refresh_tokens` 테이블 생성 완료
+4. ✅ EC2 이중화 (t3.small + t2.small, ALB, ASG) 완료
+5. ✅ WAF (teamapp-waf) → ALB 연결 완료
+6. **[Critical] 로그인 CORS 에러 수정** — EC2 컨테이너 재배포 필요 (상세: `docs/session_start.md` 4번 항목)
+7. **[Critical] 로그인 422 에러 수정** — 프론트 LoginModal placeholder "이메일"로 변경
+8. CloudWatch Alarms → SNS 알림 연결 (SRE 담당)

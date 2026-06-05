@@ -1,5 +1,29 @@
 # 최근 변경 이력 (Recent Changes)
 
+---
+
+## [bug] 로그인 CORS + 422 에러 — 미해결 (2026-06-05)
+
+- **날짜**: 2026-06-05
+- **현상**: S3 프론트 → ALB 백엔드 로그인 시 브라우저 CORS 에러 + 422 에러 동시 발생
+
+### 1. CORS 에러
+
+**원인**: EC2 컨테이너가 구버전으로 실행 중. 이전 `deploy.yml`이 `.env`에 `CORS_ORIGINS=*`를 기록했는데,
+`CORS_ORIGINS=*` + `allow_credentials=True` 조합은 CORS 스펙상 브라우저가 차단함.
+현재 `deploy.yml`은 SSM 방식으로 변경되어 `.env`를 쓰지 않으므로, 재배포 시 Secrets Manager의
+올바른 CORS_ORIGINS 값이 적용됨.
+
+**해결 방법**: `main` 브랜치에 커밋 push → GitHub Actions 자동 재배포.
+또는 EC2 SSH 접속 → `docker compose pull && docker compose up -d`
+
+### 2. 422 에러
+
+**원인**: 로그인 입력 필드 placeholder가 "아이디"인데, 백엔드 `LoginRequest`는 `email: EmailStr`로
+이메일 형식만 허용. 이메일이 아닌 값 입력 시 FastAPI가 422 반환.
+
+**해결 방법**: 프론트 `MainPage.tsx` `LoginModal`의 input placeholder를 "이메일"로 변경.
+
 > 이 문서는 TeamTeam Backend의 최근 머지(merge)된 주요 변경사항을 정리한 문서입니다.
 
 ---
