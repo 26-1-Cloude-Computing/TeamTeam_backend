@@ -30,8 +30,8 @@ AWS 콘솔 → EC2 → Instances → 인스턴스 선택 → Public IPv4 address
 ```
 
 인스턴스가 2개 있습니다 (t3, t2 — 이중화):
-- **t3 (primary)**: 배포 대상 인스턴스
-- **t2 (secondary)**: 이중화용
+- **t3.small (primary)**: 배포 대상 인스턴스 (Grafana 포함)
+- **t2.small (secondary)**: 이중화용
 
 ### Step 2 — GitHub Secret 업데이트
 ```
@@ -62,7 +62,7 @@ curl http://team-alb-1271871703.us-east-1.elb.amazonaws.com/health
 
 ### AWS EC2
 - [ ] 인스턴스 상태: Running 여부
-- [ ] 인스턴스 타입 변경 여부 (기준: t3.small × 1, t2.micro × 1)
+- [ ] 인스턴스 타입 변경 여부 (기준: t3.small × 1, t2.small × 1)
 - [ ] IAM 역할 변경 여부 (Secrets Manager 읽기 권한 필수)
 - [ ] 보안 그룹 변경 여부 (ALB → 8000 포트 허용 필수)
 
@@ -120,7 +120,7 @@ Supabase 대시보드 → Table Editor 에서 아래 테이블이 모두 있어�
   # S3에 올라간 index.html 수정 시각 확인
   aws s3 ls s3://teamteam-frontend-bucket/index.html
   ```
-- [ ] CloudFront 배포 연결 여부 (현재 미완 — S3 직접 접근 중)
+- [ ] 최신 빌드가 올라가 있는지 확인 (CloudFront 미사용 — S3 직접 접근)
 
 ---
 
@@ -184,8 +184,7 @@ curl -s -o /dev/null -w "%{http_code}" \
 | 환경 | 값 |
 |------|-----|
 | 로컬 개발 | `http://localhost:8000` |
-| 운영 (현재) | `http://team-alb-1271871703.us-east-1.elb.amazonaws.com` |
-| 운영 (CloudFront 연결 후) | CloudFront URL로 변경 필요 |
+| 운영 | `http://team-alb-1271871703.us-east-1.elb.amazonaws.com` |
 
 `.env.production` 파일에 설정하면 `npm run build` 시 자동으로 번들에 포함됩니다.
 
@@ -199,7 +198,6 @@ curl -s -o /dev/null -w "%{http_code}" \
 | EC2_HOST_2 GitHub Secret 등록 + t2 Elastic IP 연결 | 인프라A | ❌ 미완 |
 | **프론트엔드 CI/CD 구성** | 프론트E / 인프라D | ❌ 미완 — main push 시 자동으로 빌드 → S3 업로드되도록 GitHub Actions 워크플로 추가 필요 (`UsingPP/CollaborativeSoftwareProject`에 `.github/workflows/deploy.yml` 없음) |
 | S3 프론트엔드 최신 빌드 배포 | 프론트E | ❌ 미완 (현재 수동 배포 필요 — 위 배포 절차 참고) |
-| CloudFront 연결 (HTTPS) | 프론트E | ❌ 미완 |
 | CORS 실제 URL 적용 (`deploy.yml`의 `CORS_ORIGINS=*` 제거) | SecOps B | ❌ 미완 |
 | ALB WAF 연결 | SecOps B | ❌ 미완 |
 | CloudWatch Alarms + SNS | SRE C | ❌ 미완 |
@@ -211,7 +209,7 @@ curl -s -o /dev/null -w "%{http_code}" \
 
 | 이슈 | 영향 | 해결 시점 |
 |------|------|----------|
-| Refresh Token 쿠키 SameSite=Lax | S3(프론트) ↔ ALB(백엔드) 크로스 도메인에서 refresh 호출 시 쿠키 미전송 → 15분 후 강제 로그아웃 | CloudFront HTTPS 구성 후 `samesite="none", secure=True`로 변경 |
+| Refresh Token 쿠키 SameSite=Lax | S3(프론트) ↔ ALB(백엔드) 크로스 도메인에서 refresh 호출 시 쿠키 미전송 → 15분 후 강제 로그아웃 | HTTPS 환경 구성 시 `samesite="none", secure=True`로 변경 필요. 현재 HTTP 운영 중이므로 `samesite="lax"` 유지 |
 | `deploy.yml`이 `.env`에 `CORS_ORIGINS=*` 기록 | Secrets Manager의 실제 CORS URL이 덮어써짐 | `deploy.yml`에서 해당 줄 제거 |
 
 ---

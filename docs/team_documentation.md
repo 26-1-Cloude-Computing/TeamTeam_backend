@@ -23,36 +23,28 @@
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                          INTERNET                               │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-                   ┌─────────▼──────────┐
-                   │    CloudFront      │  CDN + HTTPS 종단
-                   │  (ACM 인증서 연결) │
-                   └─────────┬──────────┘
-                             │
-                   ┌─────────▼──────────┐
-                   │   S3 버킷          │  React SPA 정적 호스팅
-                   │  (프론트엔드)      │
-                   └─────────┬──────────┘
-                             │ API 요청
-                   ┌─────────▼──────────┐
-                   │   ALB + WAF        │  HTTPS 443, XSS/SQLi 차단
-                   └────┬──────────┬────┘
-                        │          │
-           ┌────────────▼──┐  ┌────▼────────────┐
-           │ EC2 (AZ-a)    │  │ EC2 (AZ-c)      │
-           │ t3.small      │  │ t3.small        │
-           │ ─────────     │  │ ─────────       │
-           │ FastAPI       │  │ FastAPI         │  Auto Scaling Group
-           │ Prometheus    │  │ Prometheus      │  min:1 / max:2
-           │ Grafana       │  │                 │
-           └──────┬────────┘  └────────┬────────┘
-                  │                    │
-     ┌────────────┼────────────────────┤
-     │            │                    │
-     ▼            ▼                    ▼
- Supabase    Gemini Flash API    Secrets Manager
- (외부 DB)   (외부 AI API)       (API Key 보관)
+└───────────────┬─────────────────────────┬───────────────────────┘
+                │                         │ API 요청
+      ┌─────────▼──────────┐    ┌─────────▼──────────┐
+      │   S3 버킷          │    │   ALB + WAF        │
+      │  (프론트엔드)      │    │  HTTP:80, XSS/SQLi │
+      │  React SPA 정적    │    │  차단              │
+      └────────────────────┘    └────┬──────────┬────┘
+                                     │          │
+                        ┌────────────▼──┐  ┌────▼────────────┐
+                        │ EC2 (AZ-a)    │  │ EC2 (AZ-c)      │
+                        │ t3.small      │  │ t2.small        │
+                        │ ─────────     │  │ ─────────       │
+                        │ FastAPI       │  │ FastAPI         │  Auto Scaling Group
+                        │ Prometheus    │  │ Prometheus      │  min:1 / max:2
+                        │ Grafana       │  │                 │
+                        └──────┬────────┘  └────────┬────────┘
+                               │                    │
+              ┌────────────────┼────────────────────┤
+              │                │                    │
+              ▼                ▼                    ▼
+          Supabase    Gemini Flash API    Secrets Manager
+          (외부 DB)   (외부 AI API)       (API Key 보관)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   DevOps:   GitHub Actions → ECR → EC2 Rolling Deploy
@@ -76,7 +68,7 @@
 | AI 연동 | AWS Lambda + Bedrock | **Gemini Flash API** (직접 호출) | Gemini 2.0 Flash가 이미 FastAPI에 연동 완료. Bedrock 대비 응답 품질이 우수하고 AWS Academy에서 Bedrock 사용 제한이 있음 |
 | 모니터링 | CloudWatch 중심 | **Prometheus + Grafana** (주) + CloudWatch (보조) | Prometheus + Grafana가 이미 Docker Compose에 구성 완료. 커스텀 메트릭 9개 구현됨. CloudWatch는 로그 중앙화 보조용으로 유지 |
 | 컨테이너 오케스트레이션 | ECS Fargate | **EC2 + Docker Compose + ASG** | AWS Academy에서 ECS 사용 제한. Docker Compose로 이미 운영 중이며, ASG로 이중화 충분히 달성 가능 |
-| 프론트엔드 | EC2에서 서빙 | **S3 + CloudFront** | 정적 파일은 S3가 99.999% SLA로 더 안정적. 비용도 EC2 대비 ~95% 절감 (FinOps) |
+| 프론트엔드 | EC2에서 서빙 | **S3 정적 호스팅** | 정적 파일은 S3가 99.999% SLA로 더 안정적. 비용도 EC2 대비 ~95% 절감 (FinOps). CloudFront 미사용 — S3 웹사이트 엔드포인트로 직접 서빙 |
 
 ### 핵심 원칙
 > "이미 잘 동작하는 것은 유지하고, AWS 서비스는 그 위에 더한다."
@@ -162,7 +154,6 @@ http_requests_errors_total             (HTTP 에러 횟수)
 | 🔴 Critical | CORS 실제 URL 적용 | 팀원B (SecOps) | 실제 URL은 시크릿(`teamapp/prod/db`)에 있으나, `deploy.yml`이 `.env`에 `CORS_ORIGINS=*`를 써서 시크릿 값을 덮어씀 → `deploy.yml` 수정 필요 |
 | 🟡 High | ALB 생성 + EC2 연결 | 팀원A (인프라) | 이중화(Multi-AZ) 구현의 핵심. 교수님 피드백 "이중화" 대응 |
 | 🟡 High | Auto Scaling Group 설정 | 팀원A (인프라) | 교수님 피드백 "이중화" 대응. 장애 자동 복구 시연 가능 |
-| 🟡 High | CloudFront 배포 | 팀원E | S3 단독보다 HTTPS + CDN으로 더 완성된 구조 |
 | 🟡 High | ECR 레포 생성 + GitHub Actions CI/CD 완성 | 팀원D (총괄) | 교수님 DevOps 강조. 이미 어느 정도 구현됨 → 팀원D가 마무리 |
 | 🟡 High | CloudWatch Alarms → SNS | 팀원C (SRE) | 알림 전달 체계 없이는 Alert Rule이 의미 없음 |
 | 🟢 Medium | CloudTrail 활성화 | 팀원B (SecOps) | AWS API 호출 감사. SecOps 발표 자료로 활용 |
@@ -258,10 +249,10 @@ Step 7  [7:00 - 8:00]  CI/CD 파이프라인 (GitHub Actions 배포 로그)
 #### 각 Step 상세
 
 **Step 1 — 로그인 → 대시보드 (1분) — 팀원D**
-- 브라우저에서 CloudFront URL 접속 (S3 배포된 프론트)
+- 브라우저에서 S3 정적 호스팅 URL 접속 (`teamteam-frontend-bucket.s3-website-us-east-1.amazonaws.com`)
 - 로그인 → 팀 대시보드 화면
 - 진행률 바, 오늘 일정, 팀원 목록 확인
-- 포인트: "S3 + CloudFront로 배포된 React 앱이 ALB를 통해 백엔드와 통신합니다"
+- 포인트: "S3에 배포된 React 앱이 ALB를 통해 백엔드와 통신합니다"
 
 **Step 2 — AI 일정 추천 (1분 30초) ← 가장 중요**
 - 일정 페이지 → AI 추천 요청
@@ -323,7 +314,7 @@ Step 7  [7:00 - 8:00]  CI/CD 파이프라인 (GitHub Actions 배포 로그)
 | B | SecOps | 중 | Secrets Manager, WAF, CloudTrail, CORS 수정 |
 | C | SRE / 로깅 | 중 | Grafana 대시보드 완성, CloudWatch Alarms, SNS |
 | D | 총괄 PM | 하 | ECR 레포 생성, GitHub Actions 완성, 발표 자료, 데모 리허설, **전체 발표** |
-| E | 프론트 배포 | 하 | S3 버킷 생성, npm build, CloudFront 연결 |
+| E | 프론트 배포 | 하 | S3 버킷 생성, npm build, S3 정적 호스팅 배포 |
 | F | FinOps | 하 | AWS Budgets 설정, Cost Allocation Tags, Cost Explorer 비용 분석 자료 |
 | G | 테스트 | 하 | Dev 환경, 부하 테스트, 데모 시나리오 검증 |
 
@@ -333,7 +324,7 @@ Step 7  [7:00 - 8:00]  CI/CD 파이프라인 (GitHub Actions 배포 로그)
 Week 1 (D-14 ~ D-7):
   Day 1-2:  팀원A — VPC, EC2, ASG, ALB 구성
             팀원B — Secrets Manager 이전, CORS 수정
-  Day 3-4:  팀원E — S3 배포, CloudFront 연결
+  Day 3-4:  팀원E — S3 배포, 정적 호스팅 설정
             팀원D — ECR 레포 생성 + GitHub Actions 완성
   Day 5-7:  팀원C — CloudWatch Alarms + SNS 연결
             팀원F — AWS Budgets, Cost Tags 설정
