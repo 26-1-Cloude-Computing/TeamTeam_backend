@@ -48,7 +48,15 @@ async def create_chat_room(team_id: int, body: ChatRoomCreateRequest, current_us
     for uid in member_ids:
         db.table("chat_room_member").insert({"room_id": room_id, "user_id": uid}).execute()
 
-    return ChatRoomResponse(id=room_id, team_id=team_id, room_name=body.room_name, created_at=room.data[0].get("created_at"))
+    members = []
+    if member_ids:
+        urows = db.table("user").select("id, name, email, profile_image_url").in_("id", list(member_ids)).execute()
+        members = [
+            {"user_id": u["id"], "name": u.get("name"), "email": u.get("email"), "profile_image_url": u.get("profile_image_url")}
+            for u in urows.data or []
+        ]
+
+    return ChatRoomResponse(id=room_id, team_id=team_id, room_name=body.room_name, created_at=room.data[0].get("created_at"), members=members)
 
 
 @router.get("/api/teams/{team_id}/chat-rooms", response_model=list[ChatRoomResponse])
@@ -63,8 +71,37 @@ async def list_chat_rooms(team_id: int, current_user: dict = Depends(get_current
 
     room_ids = [r["room_id"] for r in my_rooms.data]
     rooms = db.table("chat_room").select("*").in_("id", room_ids).eq("team_id", team_id).order("created_at", desc=True).execute()
+    if not rooms.data:
+        return []
 
-    return [ChatRoomResponse(id=r["id"], team_id=r["team_id"], room_name=r.get("room_name"), created_at=r.get("created_at")) for r in rooms.data or []]
+    # 각 방의 멤버(유저 정보 포함) 조회 후 room_id별로 그룹화
+    final_room_ids = [r["id"] for r in rooms.data]
+    member_rows = (
+        db.table("chat_room_member")
+        .select("room_id, user_id, user:user_id(id, name, email, profile_image_url)")
+        .in_("room_id", final_room_ids)
+        .execute()
+    )
+    members_by_room: dict[int, list[dict]] = {}
+    for mr in member_rows.data or []:
+        u = mr.get("user") or {}
+        members_by_room.setdefault(mr["room_id"], []).append({
+            "user_id": mr["user_id"],
+            "name": u.get("name"),
+            "email": u.get("email"),
+            "profile_image_url": u.get("profile_image_url"),
+        })
+
+    return [
+        ChatRoomResponse(
+            id=r["id"],
+            team_id=r["team_id"],
+            room_name=r.get("room_name"),
+            created_at=r.get("created_at"),
+            members=members_by_room.get(r["id"], []),
+        )
+        for r in rooms.data
+    ]
 
 
 @router.get("/api/chat-rooms/{room_id}/messages", response_model=list[ChatMessageResponse])
