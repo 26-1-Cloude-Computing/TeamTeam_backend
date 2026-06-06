@@ -222,3 +222,7 @@ __marimo__/
 
 # Claude Code
 .claude/
+
+teamteam_metrics.openmetrics
+tsdb_blocks_new/
+venv/

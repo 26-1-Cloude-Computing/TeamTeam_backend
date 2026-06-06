@@ -3,7 +3,7 @@
   "uid": "teamteam-main",
   "schemaVersion": 38,
   "refresh": "30s",
-  "time": { "from": "now-1h", "to": "now" },
+  "time": { "from": "now-3d", "to": "now" },
   "panels": [
     {
       "id": 1,
@@ -211,6 +211,45 @@
         }
       ],
       "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 11,
+      "title": "WebSocket — 채팅방별 현재 접속자 수",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 40, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "ws_chat_active_connections",
+          "legendFormat": "room_id={{ room_id }}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "palette-classic" } } }
+    },
+    {
+      "id": 12,
+      "title": "WebSocket — 신규 연결 수 (5분)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 40, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "increase(ws_chat_connections_total[5m])",
+          "legendFormat": "room_id={{ room_id }}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 13,
+      "title": "WebSocket — 채팅방별 메시지 수 (5분)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 48, "w": 24, "h": 8 },
+      "targets": [
+        {
+          "expr": "increase(ws_chat_messages_received_total[5m])",
+          "legendFormat": "room_id={{ room_id }}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "palette-classic" } } }
     }
   ]
 }
