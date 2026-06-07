@@ -6,7 +6,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.core.config import get_settings
 from app.core.logging import RequestLoggingMiddleware
-from app.routers import auth, users, teams, notices, tasks, ai_schedule, references, chat, evaluations
+from app.routers import auth, users, teams, notices, tasks, ai_schedule, references, chat, evaluations, meeting
 
 settings = get_settings()
 
@@ -47,6 +47,7 @@ app.include_router(ai_schedule.router)
 app.include_router(references.router)
 app.include_router(chat.router)
 app.include_router(evaluations.router)
+app.include_router(meeting.router)
 
 
 # ──────────────────────────────────────────────
