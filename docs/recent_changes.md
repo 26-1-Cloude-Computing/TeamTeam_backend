@@ -2,6 +2,51 @@
 
 ---
 
+## [feat] 회의 일정 영속화 + 자료 직접 파일 업로드 + 프론트 대규모 정리 — 배포 완료 (2026-06-08)
+
+- **날짜**: 2026-06-08
+- **백엔드**: `26-1-Cloude-Computing/TeamTeam_backend` main `7201f3d` (Actions #25 성공)
+- **프론트**: `UsingPP/CollaborativeSoftwareProject` main `5604a7f` (S3 배포 완료)
+
+### 1. 회의 일정 영속화 (신규)
+이전에는 "회의 일정 생성"이 없는 `/meetings` API를 호출해 **404 에러**가 났고, 회의는 화면 로컬 상태로만 남아 새로고침 시 사라졌다.
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `app/routers/meeting.py` (신규) | `GET/POST /api/teams/{team_id}/meetings` — `meeting` 테이블 CRUD, 멤버 검증 |
+| `app/schemas/meeting.py` (신규) | `MeetingCreate`, `MeetingResponse` |
+| `app/main.py` | `meeting` 라우터 등록 |
+| `docs/supabase_schema.sql` | `meeting` 테이블(14번) + `idx_meeting_team` 추가 |
+| 프론트 `Schedule.tsx` | 회의 목록을 서버에서 조회/저장, AI 확정 일정도 회의로 영구 저장 |
+
+> ✅ Supabase에 `meeting` 테이블 생성 완료(2026-06-08, RLS off).
+
+### 2. 자료실 직접 파일 업로드 (신규)
+기존엔 URL(링크)만 등록 가능했다. PC 파일 직접 업로드 추가.
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `app/routers/references.py` | `POST /api/teams/{team_id}/references/upload` — Supabase Storage `references` 버킷에 업로드(최대 20MB) 후 공개 URL을 `reference_room`에 저장 |
+| 프론트 `FileStorage.tsx` | 등록 모달에 "파일 업로드 / 링크로 등록" 탭 추가 |
+
+> ✅ Supabase Storage `references` public 버킷 생성 완료(2026-06-08).
+
+### 3. 프론트 정리·버그 수정·성능 (프론트 전용, 배포 완료)
+- **더미데이터 전면 제거**: `dumpTeams`/`MY_TEAMS`/`DUMP_TASKS`/`DUMP_MEMBERS`/하드코딩 이름(박미소·오소원 등) 삭제, API 실패 시 가짜 데이터 대신 빈 상태+알림 처리. `Tasks`/`Schedule`을 공유 `api` 인스턴스(토큰 자동·401 refresh)로 전환.
+- **대시보드 인증 가드**: 비로그인 `/team/:id` 접근 시 `/`로 리다이렉트, 로딩/빈팀/팀없음 상태 분리.
+- **테마 일관 적용**: 선택 테마를 localStorage에 저장(새로고침 유지), 모든 콘텐츠 페이지 하드코딩 색상을 테마 토큰으로 전환.
+- **팀원 '알 수 없음' 수정**: `member.user.name` 경로로 정정(Dashboard/Chat).
+- **사이드바 이름**: 하드코딩 '박미소' → `/api/users/me` 실제 이름.
+- **AI 프롬프트(채팅)**: 방 미선택 가드 + 진행 스피너 + 백엔드 에러 메시지 노출.
+- **공지 작성 권한**: `isLeader = true` 하드코딩 제거 → 팀 `leader_id`로 도출.
+- **성능**: react-router lazy 라우트 코드 스플리팅(초기 JS 404KB→308KB).
+
+> ⚠️ 운영 메모: 이 과정에서 service_role 키가 노출됐으므로 데모/제출 후 **키 회전** 권장(회전 시 Secrets Manager `SUPABASE_SERVICE_KEY`도 갱신 → 컨테이너 재시작).
+
+> ✅ 참고: 아래 2026-06-05 "로그인 CORS/422" 이슈는 이미 해결됨(원인은 Secrets Manager의 무효 `SUPABASE_SERVICE_KEY`였고 키 교체+컨테이너 재시작으로 해결). 과거 기록은 이력 보존용.
+
+---
+
 ## [bug] 로그인 CORS + 422 에러 — 미해결 (2026-06-05)
 
 - **날짜**: 2026-06-05

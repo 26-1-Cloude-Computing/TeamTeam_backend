@@ -86,6 +86,8 @@
 | 실시간 채팅 | WebSocket /ws/chat/{room_id} | ✅ |
 | 공지사항 | GET/POST /api/teams/{id}/notices | ✅ |
 | 자료실 | GET/POST /api/teams/{id}/references, DELETE /api/references/{id} | ✅ |
+| 자료 파일 업로드 | POST /api/teams/{id}/references/upload (Supabase Storage) | ✅ 2026-06-08 |
+| 회의 일정 | GET/POST /api/teams/{id}/meetings (meeting 테이블) | ✅ 2026-06-08 |
 | 팀원 평가 | POST /api/evaluations | ✅ |
 | 헬스체크 | GET /health | ✅ |
 
@@ -112,34 +114,33 @@
 | ECR 레포 (teamteam-backend) | ✅ |
 | GitHub Actions CI/CD (main push → ECR → SSM → EC2) | ✅ |
 | Secrets Manager (`teamapp/prod/{jwt,ai,db}`) | ✅ |
-| Supabase PostgreSQL (refresh_tokens 포함 12개 테이블) | ✅ |
+| Supabase PostgreSQL (refresh_tokens·meeting 포함 14개 테이블) | ✅ |
+| Supabase Storage (`references` public 버킷) | ✅ 2026-06-08 |
 | S3 프론트엔드 배포 | ✅ |
 
 ---
 
 ## 4. 남은 작업 및 알려진 버그
 
-### 🔴 Critical — 지금 당장 고쳐야 동작함
+### ✅ 과거 버그 — 전부 해결·배포 (2026-06-08)
 
-| 항목 | 원인 | 해결 방법 |
-|------|------|-----------|
-| **로그인 CORS 에러** | EC2 컨테이너가 구버전 실행 중 (CORS_ORIGINS=* + allow_credentials=True 조합은 브라우저가 차단) | `main` 브랜치에 아무 커밋 push → GitHub Actions 재배포, 또는 EC2 SSH 접속 후 `docker compose up -d` |
-| **로그인 422 에러** | 로그인 입력 필드 레이블이 "아이디"인데 백엔드는 `EmailStr` 검증 — 이메일 형식이 아니면 422 반환 | 프론트 `LoginModal` 입력 placeholder를 "이메일" 로 변경 |
+| 과거 항목 | 해결 |
+|------|------|
+| 로그인 CORS / 422 / 비밀번호 콘솔 노출 | Secrets Manager 키 교체 + 로그인 input `type="email"` + `console.log` 제거 |
+| 대시보드 인증 가드 없음 | 비로그인 `/team/:id` → `/` 리다이렉트 |
+| 빈 팀 → 더미 데이터 표시 | `dumpTeams` 등 더미 전면 제거 + 빈/없음 상태 UI |
+| 팀원 '알 수 없음' / 사이드바 '박미소' | `member.user.name`, `/api/users/me` 실제 데이터 |
+| 회의 일정 생성 404 | `meeting` 테이블 + `/meetings` API로 정상 저장 |
+| 디버그 console.log 잔류 | 전부 제거 |
 
-### 🟡 High — 기능 영향 있음
+> 상세: `recent_changes.md`(2026-06-08), `gap_analysis v6`.
 
-| 항목 | 파일 | 내용 |
-|------|------|------|
-| 대시보드 인증 가드 없음 | `DashboardLayout.tsx` | 로그인 없이 `/team/1` 직접 접근 가능. `useSelector(isLoggedIn)` 체크 후 `/`로 redirect 필요 |
-| 빈 팀 목록 → 더미 데이터 표시 | `DashboardLayout.tsx:58-73` | `teams.length === 0`이면 에러를 throw해서 하드코딩 더미 팀을 보여줌 — 신규 유저에게 잘못된 팀이 표시됨 |
+### 🟢 남은 작업 (선택)
 
-### 🟢 Medium — 배포 전 정리 권장
-
-| 항목 | 파일 | 내용 |
-|------|------|------|
-| 비밀번호 콘솔 출력 | `MainPage.tsx:54` | `console.log({ email, password })` — 로그인 시 비밀번호가 브라우저 콘솔에 평문으로 찍힘 |
-| 디버그 console.log 잔류 | `DashboardLayout.tsx:57, 69` | `console.log(teams)`, `console.log(1)` 제거 필요 |
-| CloudWatch Alarms → SNS | SRE 담당 | 알림 룰은 정의됐으나 알림 전달 체계 미연결 |
+| 항목 | 내용 |
+|------|------|
+| CloudWatch Alarms → SNS | 알림 룰은 정의됐으나 알림 전달 체계 미연결 (SRE 담당) |
+| service_role 키 회전 | 작업 중 키 노출 → 데모/제출 후 회전 권장 (회전 시 Secrets Manager `SUPABASE_SERVICE_KEY` 갱신 + 컨테이너 재시작) |
 
 ---
 

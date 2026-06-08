@@ -30,9 +30,10 @@ app/
 │   ├── notices.py       # 공지사항 CRUD
 │   ├── tasks.py         # 업무 관리
 │   ├── ai_schedule.py   # AI 일정 추천 세션
-│   ├── references.py    # 자료실
+│   ├── references.py    # 자료실 (링크 등록 + 파일 업로드/Storage)
 │   ├── chat.py          # 채팅방 & 메시지 & AI 프롬프트
-│   └── evaluations.py   # 상호평가
+│   ├── evaluations.py   # 상호평가
+│   └── meeting.py       # 회의 일정 (meeting 테이블)
 └── schemas/             # Pydantic 요청/응답 모델
 ```
 
@@ -136,8 +137,15 @@ docker compose up --build
 | 메서드 | 엔드포인트 | 설명 |
 |--------|-----------|------|
 | GET | `/api/teams/{teamId}/references` | 자료 목록 |
-| POST | `/api/teams/{teamId}/references` | 자료 업로드 |
+| POST | `/api/teams/{teamId}/references` | 자료 등록 (file_url 링크) |
+| POST | `/api/teams/{teamId}/references/upload` | 파일 직접 업로드 → Supabase Storage(`references` 버킷, ≤20MB) |
 | DELETE | `/api/references/{refId}` | 자료 삭제 |
+
+### 회의 일정 (Meetings)
+| 메서드 | 엔드포인트 | 설명 |
+|--------|-----------|------|
+| GET | `/api/teams/{teamId}/meetings` | 회의 일정 목록 |
+| POST | `/api/teams/{teamId}/meetings` | 회의 일정 생성 (meeting 테이블 영속) |
 
 ### 채팅 (Chat)
 | 메서드 | 엔드포인트 | 설명 |
