@@ -2,6 +2,63 @@
 
 ---
 
+## [feat] AI 일정 2단계 워크플로우 + 담당자 배정 + 다가오는 일정 + 업무 담당자 재배정 — 배포 완료 (2026-06-11)
+
+- **백엔드**: 로컬 빌드 → ECR push → SSM 배포(운영 인스턴스 `i-05ccd62f09320b9cb`). ALB `/health` 200, 신규 라우트 403(auth) 확인.
+- **프론트**: 로컬 빌드 → `aws s3 sync`(S3 배포 완료).
+
+### 1. AI 일정 — 2단계 워크플로우(분석·되묻기 → 추천·할당 → 확정) + 인원별 할당
+
+기존: "할 일 → 마감일만" 추천. 담당자/누락점검 없음. → 재설계.
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `app/routers/ai_schedule.py` | 신규 3 엔드포인트: `POST /api/teams/{id}/ai-schedule/analyze`(누락 할 일·확인 질문), `…/plan`(마감일+담당자 배정), `…/confirm`(담당자 포함 task 생성 + 선택 시 meeting 등록). 모두 팀장 전용. Gemini 실패 시 서버 폴백(균등분배+라운드로빈). 모델 `gemini-2.5-flash`. 구 `ai-sessions` 흐름은 유지(미사용). |
+| `app/schemas/ai_schedule.py` | `AIAnalyzeRequest/Response`, `AIPlanRequest/Response`, `AIAssignment`, `AIScheduleConfirmRequest` 추가 |
+| 프론트 `pages/Schedule.tsx` | 3단계 모달(점검·되묻기 → 마감일·담당자 표 → 확정). 확정 시 tasks·dashboard·meetings 캐시 무효화 후 재조회. 입력값은 기각해도 유지. |
+
+### 2. 업무 담당자 재배정 (토글식)
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `app/schemas/task.py` | `TaskUpdateRequest`에 `assignee_id` 추가 |
+| `app/routers/tasks.py` | `update_task` 권한 완화: 본인 한정 → **팀 멤버면 수정 가능**. 재배정 시 새 담당자가 같은 팀 멤버인지 검증 |
+| 프론트 `pages/Tasks.tsx` | 담당자 배지 클릭 → 팀원 드롭다운 → PATCH(낙관적). 상태도 동일 드롭다운. 담당자별 필터 추가 |
+
+### 3. 다가오는 일정 (일정 페이지)
+
+- 프론트만. 회의 + 업무 마감(task.due_date) + 프로젝트 마감(team.deadline)을 합쳐 **다가오는 순 Top 5 + D-day** 카드 + 캘린더 종류별 색 점 + 범례 + "전체 보기".
+
+### 4. 체감 대기시간(SWR) 개선 — 프론트 전반
+
+- `src/app/store/dataCache.ts`(SWR + sessionStorage 영속 + `swrLoad`/`prefetch`), `src/app/store/resources.ts`(리소스별 fetcher 단일화), `src/app/components/Skeleton.tsx`(스켈레톤). `DashboardLayout`에서 팀 진입 시 사이드바 탭 프리페치.
+
+---
+
+## [fix] 자동 로그아웃·Gemini·공지고정·평가 DB·다수 데모 UX — 배포 완료 (2026-06-10)
+
+### 1. 자동 로그아웃(~15분) — 크로스도메인 refresh 토큰
+- 원인: access 15분 만료 + refresh가 httpOnly 쿠키뿐인데 http S3 ↔ ALB 크로스도메인이라 쿠키 미전송 → refresh 401.
+- 해결: `app/routers/auth.py` login·signup이 `refresh_token`을 **body**로도 반환, `/refresh`·`/logout`이 **`X-Refresh-Token` 헤더** 수용. `TokenResponse`에 `refresh_token` 추가. 프론트는 localStorage 저장 후 헤더 전송, refresh 무효 시에만 로그아웃.
+
+### 2. Gemini 실연동
+- 원인: 키는 유효하나 `gemini-2.0-flash` free-tier `limit:0`(모델별 0).
+- 해결: `chat.py`·`ai_schedule.py` 모델 `gemini-2.0-flash → gemini-2.5-flash`. `teamapp/prod/ai`에 AQ. 형식 키 설치 후 재배포.
+
+### 3. 공지 고정
+- `app/routers/notices.py` `PATCH /api/notices/{id}/pin`(팀장). 프론트 고정/해제 버튼.
+
+### 4. 상호평가 DB 연동
+- `app/routers/evaluations.py`: submit을 **upsert**로(중복 409 제거), `GET /api/teams/{id}/evaluations/me` 추가. 프론트는 완료 평가를 DB에서 불러와 수정(기존 localStorage·"초기화" 폐기 → "수정").
+
+### 5. 그 외 프론트 데모 UX
+- 랜딩 "내가 활동 중인 팀" 카드, 마이페이지 총합(5항목 평균으로 정정), 홈 오늘 일정·업무 현황, 자료 업로드 데모 로컬표시, 업무 상태 드롭다운, 채팅 자동스크롤·로딩표시·AI 프롬프트 툴팁, 공지 로딩 UX.
+
+### 6. 인프라
+- GitHub Actions 없이 **로컬 ECR 빌드(amd64, `--provenance=false`) + SSM 배포** 경로 검증. ⚠️ Academy 랩 중지 시 EC2 stop → 재시작 후에도 ALB 503, EC2 start 필요.
+
+---
+
 ## [feat] 회의 일정 영속화 + 자료 직접 파일 업로드 + 프론트 대규모 정리 — 배포 완료 (2026-06-08)
 
 - **날짜**: 2026-06-08
