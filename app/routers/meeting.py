@@ -43,3 +43,19 @@ async def create_meeting(team_id: int, body: MeetingCreate, current_user: dict =
     if not result.data:
         raise HTTPException(status_code=500, detail="회의 일정 생성에 실패했습니다.")
     return MeetingResponse(**result.data[0])
+
+
+@router.delete("/api/meetings/{meeting_id}", response_model=dict)
+async def delete_meeting(meeting_id: int, current_user: dict = Depends(get_current_user)):
+    """회의 일정 삭제 — 같은 팀 멤버면 삭제 가능."""
+    db = get_supabase()
+
+    meeting = db.table("meeting").select("team_id").eq("id", meeting_id).single().execute()
+    if not meeting.data:
+        raise HTTPException(status_code=404, detail="회의 일정을 찾을 수 없습니다.")
+
+    _verify_member(db, meeting.data["team_id"], current_user["id"])
+
+    db.table("meeting").delete().eq("id", meeting_id).execute()
+
+    return {"message": "회의 일정이 삭제되었습니다."}

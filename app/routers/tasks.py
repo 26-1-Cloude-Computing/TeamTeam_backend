@@ -160,3 +160,22 @@ async def update_task(
     db.table("task").update(update_data).eq("id", task_id).execute()
 
     return {"message": "업무가 수정되었습니다."}
+
+
+@router.delete("/api/tasks/{task_id}", response_model=dict)
+async def delete_task(
+    task_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    """업무 삭제 — 같은 팀 멤버면 삭제 가능."""
+    db = get_supabase()
+
+    task = db.table("task").select("team_id").eq("id", task_id).single().execute()
+    if not task.data:
+        raise HTTPException(status_code=404, detail="업무를 찾을 수 없습니다.")
+
+    _verify_team_member(db, task.data["team_id"], current_user["id"])
+
+    db.table("task").delete().eq("id", task_id).execute()
+
+    return {"message": "업무가 삭제되었습니다."}
