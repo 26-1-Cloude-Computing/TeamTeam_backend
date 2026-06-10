@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.dependencies import get_current_user
 from app.core.supabase import get_supabase
-from app.schemas.notice import NoticeCreateRequest, NoticeResponse
+from app.schemas.notice import NoticeCreateRequest, NoticeResponse, NoticePinRequest
 
 router = APIRouter(tags=["Notices"])
 
@@ -90,6 +90,56 @@ async def create_notice(
         content=n.get("content"),
         is_leader_notice=n.get("is_leader_notice", False),
         created_at=n.get("created_at"),
+    )
+
+
+@router.patch("/api/notices/{notice_id}/pin", response_model=NoticeResponse)
+async def pin_notice(
+    notice_id: int,
+    body: NoticePinRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """공지 고정/고정 해제 — 팀장만 가능. is_leader_notice 플래그를 고정 표시로 사용한다."""
+    db = get_supabase()
+
+    notice = (
+        db.table("notice")
+        .select("*, author:author_id(name)")
+        .eq("id", notice_id)
+        .single()
+        .execute()
+    )
+    if not notice.data:
+        raise HTTPException(status_code=404, detail="공지사항을 찾을 수 없습니다.")
+
+    n = notice.data
+    _verify_team_member(db, n["team_id"], current_user["id"])
+
+    # 팀장만 고정/해제 가능
+    team = db.table("team").select("leader_id").eq("id", n["team_id"]).single().execute()
+    if not (team.data and team.data["leader_id"] == current_user["id"]):
+        raise HTTPException(status_code=403, detail="공지 고정은 팀장만 할 수 있습니다.")
+
+    updated = (
+        db.table("notice")
+        .update({"is_leader_notice": body.is_pinned})
+        .eq("id", notice_id)
+        .execute()
+    )
+    if not updated.data:
+        raise HTTPException(status_code=500, detail="공지 고정 상태 변경에 실패했습니다.")
+
+    author_name = n.get("author", {}).get("name") if n.get("author") else None
+    row = updated.data[0]
+    return NoticeResponse(
+        id=row["id"],
+        team_id=row["team_id"],
+        author_id=row["author_id"],
+        author_name=author_name,
+        title=row["title"],
+        content=row.get("content"),
+        is_leader_notice=row.get("is_leader_notice", False),
+        created_at=row.get("created_at"),
     )
 
 

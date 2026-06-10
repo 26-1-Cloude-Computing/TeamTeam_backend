@@ -124,13 +124,13 @@ async def update_task(
     """업무 상태 수정 — 본인 업무만 수정 가능."""
     db = get_supabase()
 
-    # Check task ownership
+    # Check task exists
     task = db.table("task").select("assignee_id, team_id").eq("id", task_id).single().execute()
     if not task.data:
         raise HTTPException(status_code=404, detail="업무를 찾을 수 없습니다.")
 
-    if task.data["assignee_id"] != current_user["id"]:
-        raise HTTPException(status_code=403, detail="본인의 업무만 수정할 수 있습니다.")
+    # 팀 멤버면 수정 가능 (담당자 재배정·상태 변경 등 협업을 위해 권한 완화)
+    _verify_team_member(db, task.data["team_id"], current_user["id"])
 
     update_data = body.model_dump(exclude_unset=True)
     if not update_data:
@@ -139,6 +139,18 @@ async def update_task(
     # Validate status
     if "status" in update_data and update_data["status"] not in ("To do", "In progress", "Done"):
         raise HTTPException(status_code=400, detail="유효하지 않은 상태입니다. ('To do', 'In progress', 'Done')")
+
+    # 담당자 재배정 시: 새 담당자가 같은 팀의 멤버인지 검증
+    if "assignee_id" in update_data and update_data["assignee_id"] is not None:
+        member = (
+            db.table("team_member")
+            .select("id")
+            .eq("team_id", task.data["team_id"])
+            .eq("user_id", update_data["assignee_id"])
+            .execute()
+        )
+        if not member.data:
+            raise HTTPException(status_code=400, detail="해당 팀의 멤버에게만 배정할 수 있습니다.")
 
     if "due_date" in update_data and update_data["due_date"]:
         update_data["due_date"] = update_data["due_date"].isoformat()

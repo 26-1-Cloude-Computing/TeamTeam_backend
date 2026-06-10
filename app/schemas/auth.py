@@ -38,3 +38,6 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user_id: int
     name: str
+    # 크로스 도메인(S3 http → ALB) 환경에서 httpOnly 쿠키가 전송되지 않으므로
+    # refresh_token을 응답 본문으로도 내려 프론트가 localStorage에 보관하도록 한다.
+    refresh_token: str | None = None

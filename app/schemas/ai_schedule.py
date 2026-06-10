@@ -39,3 +39,38 @@ class AISessionResponse(BaseModel):
 class AIConfirmRequest(BaseModel):
     """Request to confirm (and optionally modify) AI-recommended tasks."""
     tasks: list[AIScheduleTaskItem]
+
+
+# ── 2단계 워크플로우(분석·되묻기 → 추천·할당 → 확정) ──
+
+class AIAnalyzeRequest(BaseModel):
+    goal: str
+    deadline: date
+    tasks: list[str]
+
+
+class AIAnalyzeResponse(BaseModel):
+    suggested_tasks: list[str] = []   # 누락 가능성 있는 추가 할 일 제안
+    questions: list[str] = []         # 팀장에게 되묻는 확인 질문
+
+
+class AIPlanRequest(BaseModel):
+    goal: str
+    deadline: date
+    tasks: list[str]                  # 되묻기 후 확정된 최종 할 일 목록
+
+
+class AIAssignment(BaseModel):
+    task_name: str
+    due_date: date | None = None
+    assignee_id: int | None = None
+    assignee_name: str | None = None
+
+
+class AIPlanResponse(BaseModel):
+    assignments: list[AIAssignment] = []
+
+
+class AIScheduleConfirmRequest(BaseModel):
+    assignments: list[AIAssignment]
+    create_meetings: bool = False     # 일정(회의)으로도 등록할지

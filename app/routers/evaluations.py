@@ -30,12 +30,6 @@ async def submit_evaluation(team_id: int, body: EvaluationCreateRequest, current
     # Check evaluatee is also a member
     _verify_member(db, team_id, body.evaluatee_id)
 
-    # Check for duplicate
-    existing = db.table("evaluation").select("id").eq("team_id", team_id).eq("evaluator_id", current_user["id"]).eq("evaluatee_id", body.evaluatee_id).execute()
-    if existing.data:
-        evaluation_submit_total.labels(status="failure", error_type="duplicate").inc()
-        raise HTTPException(status_code=409, detail="이미 해당 팀원을 평가했습니다.")
-
     eval_data = {
         "team_id": team_id,
         "evaluator_id": current_user["id"],
@@ -48,8 +42,14 @@ async def submit_evaluation(team_id: int, body: EvaluationCreateRequest, current
         "comment": body.comment,
     }
 
+    # 이미 평가한 팀원이면 수정(update), 아니면 새로 생성(insert) — 평가 수정 지원.
+    existing = db.table("evaluation").select("id").eq("team_id", team_id).eq("evaluator_id", current_user["id"]).eq("evaluatee_id", body.evaluatee_id).execute()
+
     try:
-        result = db.table("evaluation").insert(eval_data).execute()
+        if existing.data:
+            result = db.table("evaluation").update(eval_data).eq("id", existing.data[0]["id"]).execute()
+        else:
+            result = db.table("evaluation").insert(eval_data).execute()
     except Exception as e:
         evaluation_submit_total.labels(status="failure", error_type="db_error").inc()
         record = logger.makeRecord("teamteam", logging.ERROR, "", 0,
@@ -68,6 +68,22 @@ async def submit_evaluation(team_id: int, body: EvaluationCreateRequest, current
 
     evaluation_submit_total.labels(status="success", error_type="none").inc()
     return EvaluationResponse(**result.data[0])
+
+
+@router.get("/api/teams/{team_id}/evaluations/me", response_model=list[EvaluationResponse])
+async def get_my_evaluations(team_id: int, current_user: dict = Depends(get_current_user)):
+    """내가 이 팀에서 제출한 평가 목록 — 평가 완료 내용 조회/수정용."""
+    db = get_supabase()
+    _verify_member(db, team_id, current_user["id"])
+
+    rows = (
+        db.table("evaluation")
+        .select("*")
+        .eq("team_id", team_id)
+        .eq("evaluator_id", current_user["id"])
+        .execute()
+    )
+    return [EvaluationResponse(**r) for r in rows.data or []]
 
 
 @router.get("/api/teams/{team_id}/members/eval-status", response_model=list[EvalStatusItem])

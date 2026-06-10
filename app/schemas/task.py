@@ -13,6 +13,7 @@ class TaskUpdateRequest(BaseModel):
     task_name: str | None = None
     due_date: date | None = None
     status: str | None = None  # 'To do', 'In progress', 'Done'
+    assignee_id: int | None = None  # 담당자 변경(재배정)
 
 
 class TaskResponse(BaseModel):
